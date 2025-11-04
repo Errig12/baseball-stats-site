@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Baseball Stats — Sheet1</title>
+  <!-- Simple sport-themed styling -->
+  <style>
+    :root{
+      --accent-blue:#0b5bd7;
+      --accent-red:#d12b2b;
+      --bg:#ffffff;
+      --muted:#666;
+      --card:#f8f9fb;
+      --table-border:#e1e6f0;
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    }
+    body{background:linear-gradient(180deg,#fff 0%, #f6f8fb 100%); color:#111; margin:0; padding:24px;}
+    .container{max-width:1100px; margin:0 auto;}
+    header{display:flex; align-items:center; gap:16px; margin-bottom:18px;}
+    .logo{
+      width:64px; height:64px; border-radius:8px; background:linear-gradient(135deg,var(--accent-blue),var(--accent-red)); display:flex; align-items:center; justify-content:center; color:white; font-weight:700; font-size:22px; box-shadow:0 6px 18px rgba(11,91,215,0.12);
+    }
+    h1{font-size:20px; margin:0;}
+    p.lead{margin:0; color:var(--muted); font-size:13px;}
+    .card{background:var(--card); border-radius:12px; padding:14px; box-shadow:0 6px 18px rgba(16,24,40,0.04); border:1px solid rgba(14,43,77,0.03);}
+    .table-wrap{overflow:auto; margin-top:12px; border-radius:8px; background:white; border:1px solid var(--table-border);}
+    table{width:100%; border-collapse:collapse; font-size:13px;}
+    thead th{position:sticky; top:0; background:linear-gradient(90deg, #fff, #f8fbff); text-align:left; padding:10px 12px; font-weight:600; border-bottom:1px solid var(--table-border);}
+    tbody td{padding:10px 12px; border-bottom:1px dashed #eef3fb;}
+    tbody tr:hover{background:linear-gradient(90deg, rgba(11,91,215,0.03), rgba(209,43,43,0.01));}
+    .small{font-size:12px; color:var(--muted);}
+    .controls{display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap;}
+    .file-note{font-size:12px; color:var(--muted);}
+    .btn{display:inline-block; padding:8px 10px; border-radius:8px; background:var(--accent-blue); color:white; text-decoration:none; font-weight:600; font-size:13px;}
+    @media (max-width:600px){ header{gap:10px} .logo{width:52px;height:52px;font-size:18px} }
+  </style>
+  <!-- SheetJS CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">⚾️</div>
+      <div>
+        <h1>Baseball Stats — Sheet1</h1>
+        <p class="lead">Read-only view. Data is loaded from <code>Baseball.xlsx</code>. (Players sheet available for lookups behind the scenes.)</p>
+      </div>
+    </header>
+
+    <div class="card">
+      <div class="controls">
+        <div class="file-note">This page expects <strong>Baseball.xlsx</strong> to be hosted alongside this <code>index.html</code> file in the same folder (GitHub Pages root).</div>
+        <a class="btn" href="#" id="reloadBtn">Reload Data</a>
+      </div>
+
+      <div class="table-wrap" id="tableWrap" style="margin-top:12px;">
+        <table id="dataTable">
+          <thead id="thead"></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+
+      <p class="small" style="margin-top:10px">Tip: To update data, upload a new <code>Baseball.xlsx</code> to the same repo location and reload the page.</p>
+    </div>
+  </div>
+
+<script>
+(async function(){
+  // Keep players data for lookups (not displayed).
+  let playersSheet = null;
+  const sheetShown = "Sheet1"; // displayed sheet name
+
+  async function loadXlsx() {
+    try {
+      // Fetch the workbook file relative to this page.
+      const resp = await fetch('Baseball.xlsx');
+      if (!resp.ok) throw new Error('Failed to fetch Baseball.xlsx (HTTP ' + resp.status + ')');
+      const arrayBuffer = await resp.arrayBuffer();
+      const data = new Uint8Array(arrayBuffer);
+      const workbook = XLSX.read(data, {type:'array'});
+
+      // Save Players sheet in memory if it exists
+      if (workbook.Sheets['Players']) {
+        playersSheet = XLSX.utils.sheet_to_json(workbook.Sheets['Players'], {defval: ''});
+        console.log('Players loaded:', playersSheet.length, 'rows');
+      } else {
+        playersSheet = null;
+        console.log('No Players sheet found.');
+      }
+
+      // Get Sheet1
+      if (!workbook.Sheets[sheetShown]) {
+        renderError('Sheet named "'+sheetShown+'" not found in Baseball.xlsx');
+        return;
+      }
+      const sheet = workbook.Sheets[sheetShown];
+      const rows = XLSX.utils.sheet_to_json(sheet, {defval: ''});
+      renderTable(rows);
+    } catch (err) {
+      console.error(err);
+      renderError(err.message || String(err));
+    }
+  }
+
+  function renderError(msg) {
+    const wrap = document.getElementById('tableWrap');
+    wrap.innerHTML = '<div style="padding:18px;color:#8b0000; font-weight:600;">Error: '+escapeHtml(msg)+'</div>';
+  }
+
+  function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function renderTable(rows){
+    const thead = document.getElementById('thead');
+    const tbody = document.getElementById('tbody');
+    thead.innerHTML = '';
+    tbody.innerHTML = '';
+
+    if (!rows || rows.length === 0) {
+      thead.innerHTML = '<tr><th>No data found in ' + escapeHtml(sheetShown) + '</th></tr>';
+      return;
+    }
+
+    const cols = Object.keys(rows[0]);
+
+    // header row
+    const tr = document.createElement('tr');
+    for (const c of cols) {
+      const th = document.createElement('th');
+      th.textContent = c;
+      tr.appendChild(th);
+    }
+    thead.appendChild(tr);
+
+    // body rows
+    for (const r of rows) {
+      const trb = document.createElement('tr');
+      for (const c of cols) {
+        const td = document.createElement('td');
+        let v = r[c];
+        // If field references players (example: player id), you can look up from playersSheet here.
+        // Example placeholder: if column name contains "player" and playersSheet exists, resolve display name
+        if (playersSheet && /player/i.test(c) && v !== '') {
+          // try to find player by ID or name
+          const found = playersSheet.find(p => {
+            return Object.values(p).some(val => String(val).toLowerCase() === String(v).toLowerCase());
+          });
+          if (found) {
+            // show the first matching player's "Name" if available, else full object
+            td.textContent = found.Name || JSON.stringify(found);
+          } else {
+            td.textContent = v;
+          }
+        } else {
+          td.textContent = v;
+        }
+        trb.appendChild(td);
+      }
+      tbody.appendChild(trb);
+    }
+  }
+
+  document.getElementById('reloadBtn').addEventListener('click', function(e){
+    e.preventDefault();
+    loadXlsx();
+  });
+
+  // First load
+  await loadXlsx();
+
+})();
+</script>
+</body>
+</html>
